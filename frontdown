@@ -1,0 +1,103 @@
+#!/bin/sh
+
+Main() {
+    Init
+    LoadConfigFile $FRONTDOWNRC
+    ProcessFrontDownDir
+}
+
+Init() {
+    old_pwd=`pwd`
+    user="enfors"
+    trap "cd $old_pwd" EXIT
+
+    if [ -e "$HOME/.frontdownrc" ]; then
+	DEFAULT_FRONTDOWNRC="$HOME/.frontdownrc"
+    else
+	DEFAULT_FRONTDOWNRC="/etc/frontdownrc"
+    fi
+
+    if [ -z "$FRONTDOWNRC" ]; then
+	export FRONTDOWNRC=$DEFAULT_FRONTDOWNRC
+    fi
+}
+
+LoadConfigFile() {
+    config_file=$1
+
+    VerifyReadable $config_file
+
+    while read variable value; do
+	case $variable in
+	    *)
+		export $variable=$value
+		;;
+	esac
+    done <$config_file
+}
+
+ProcessFrontDownDir() {
+    VerifyReadable $frontdown_dir
+    
+    for file in `ls -1 $frontdown_dir/config_*`; do
+	ProcessConfig $file
+    done
+}
+
+ProcessConfig() {
+    config_file=$1
+
+    echo "Processing config $config_file... \c"
+
+    unset source_dir
+    unset source_files
+    unset destination_dir
+
+    LoadConfigFile $config_file
+
+    if [ ! -e "$destination_dir" ]; then
+	mkdir -p $destination_dir
+	chown $user:$user $destination_dir
+	chmod 6700 $destination_dir
+    fi
+
+    cd "$source_dir"
+    nice tar czf $destination_dir/latest.tar.gz $source_files
+    chown $user:$user $destination_dir/latest.tar.gz
+
+    cd "$destination_dir"
+    day=`date +%a`
+    month=`date +%b`
+    year=`date +%Y`
+
+    ln -f latest.tar.gz day-$day.tar.gz
+    chown $user:$user   day-$day.tar.gz
+    ln -f latest.tar.gz month-$month.tar.gz
+    chown $user:$user   month-$month.tar.gz
+    ln -f latest.tar.gz year-$year.tar.gz
+    chown $user:$user   year-$year.tar.gz
+    echo "done."
+}
+
+VerifyExists() {
+    if [ ! -e "$1" ]; then
+	Error "File '$PWD/$1' does not exist."
+    fi
+}
+
+VerifyReadable() {
+    VerifyExists $1
+    
+    if [ ! -r "$1" ]; then
+	Error "File '$PWD/$1': read permission denied."
+    fi
+}
+
+Error() {
+    echo >&2 "Frontdown error: $*"
+    exit 1
+}
+
+Main
+exit $?
+
